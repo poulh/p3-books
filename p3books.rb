@@ -1,3 +1,5 @@
+#!/usr/bin/ruby
+
 require 'cinch'
 require 'stringio'
 require 'zip'
@@ -6,6 +8,7 @@ require 'shellwords'
 
 INFO = '::INFO::'
 EBOOKS = '#ebooks'
+DEFAULT_PATH = File::expand_path( "~/Downloads/ebooks" )
 
 def search( cli, bot )
     title = cli.ask "What books would you like to search for? ( Q to quit )"
@@ -17,11 +20,26 @@ def search( cli, bot )
     Channel( EBOOKS ).send( "@search #{title} epub rar" )
 end
 
+def choose_book( cli, bot, books )
+    cli.choose do | book_menu |
+        book_menu.prompt = "Which book would you like to download?"
+        book_menu.choice( "New Search" ) do
+            search( cli, bot )
+        end
+        books.keys.sort.each do | title |
+            choice = [ books[ title ], title].join(' ')
+            book_menu.choice( choice ) do
+                Channel( EBOOKS ).send( choice )
+            end
+        end
+    end
+end
+
 def main
     cli = HighLine.new
 
     nick = cli.ask "What is your nickname?"
-
+    books = {}
     bot = Cinch::Bot.new do
         configure do |c|
             c.server = "irc.irchighway.net"
@@ -56,33 +74,25 @@ def main
                         books[ title ] = owner unless books.has_key?( title )
                     end
 
-                    cli.choose do | book_menu |
-                        book_menu.prompt = "Which book would you like to download?"
-                        book_menu.choice( "Search Again" ) do
-                            search( cli, bot )
-                        end
-                        books.keys.sort.each do | title |
-                            choice = [ books[ title ], title].join(' ')
-                            book_menu.choice( choice ) do
-                                Channel( EBOOKS ).send( choice )
-                            end
-                        end
-                    end
+                    choose_book( cli, bot, books )
                 end
                 File::delete( dcc.filename )
             else
-                f = File::open( dcc.filename, 'w' )
+                f = File::open( File::join( DEFAULT_PATH, dcc.filename ), 'w' )
                 dcc.accept( f )
                 f.close
-                cmd = "xdg-open #{Shellwords::escape( dcc.filename )}"
-                ok = system( cmd )
-                search( cli, bot )
 
+                choose_book( cli, bot, books )
             end
         end
 
         on :private do | m, dcc |
             if( m.user == "Search" )
+                if( m.message.index( 'Sorry' ) )
+                    puts "No Results Found"
+                    search( cli, bot )
+                end
+
             else
                 puts "#{m.user} - #{Sanitize(m.message)}"
             end
