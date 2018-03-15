@@ -10,6 +10,8 @@ INFO = '::INFO::'
 EBOOKS = '#ebooks'
 DEFAULT_PATH = File::expand_path( "~/Downloads/ebooks" )
 
+SEARCH_KEYWORD = 'searchook'
+
 def search( cli, bot )
     title = cli.ask "What books would you like to search for? ( Q to quit )"
     if title.downcase == 'q'
@@ -17,7 +19,9 @@ def search( cli, bot )
         sleep( 1 )
         exit
     end
-    Channel( EBOOKS ).send( "@search #{title} epub rar" )
+    search_phrase = "#{title} epub rar"
+    Channel( EBOOKS ).send( "@#{SEARCH_KEYWORD} #{search_phrase}" )
+    return search_phrase
 end
 
 def choose_book( cli, bot, books )
@@ -40,6 +44,7 @@ def main
 
     nick = cli.ask "What is your nickname?"
     books = {}
+    search_bot = nil
     bot = Cinch::Bot.new do
         configure do |c|
             c.server = "irc.irchighway.net"
@@ -58,7 +63,7 @@ def main
         end
 
         on :dcc_send do | m, dcc |
-            if( m.user == 'Search' )
+            if( m.user == 'SearchOok' )
                 f = File::open( dcc.filename, 'w' )
                 dcc.accept( f )
                 f.close
@@ -87,7 +92,7 @@ def main
         end
 
         on :private do | m, dcc |
-            if( m.user == "Search" )
+            if( m.user == "SearchOok" )
                 if( m.message.index( 'Sorry' ) )
                     puts "No Results Found"
                     search( cli, bot )
