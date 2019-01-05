@@ -24,7 +24,7 @@ class Chooser
         @search_bots = []
         @search_bot = "searchook"
         @search_suffix = "epub rar"
-        set_download_path('~/Downloads/ebooks')
+        choose_default_path('~/Downloads/ebooks')
         
         @searches = {}
         @results = {}
@@ -42,10 +42,42 @@ class Chooser
         do_yield("quit")
     end
 
+    def choose_default_search_suffix()
+        @search_suffix = @cli.ask("What would you like the search suffix to be?")
+    end
 
     def choose(&block)
         @block = block
         main_menu()
+    end
+
+    def choose_preferences()
+        @cli.choose do | pref_menu |
+
+            pref_menu.prompt = "Select Preferences to change"
+            
+            main_menu_choice(pref_menu)
+            
+            pref_menu.choice("Choose Default Search Bot (#{@search_bot})") do
+                choose_default_search_bot()
+            end
+
+            pref_menu.choice("Change Search Suffix (#{@search_suffix})") do
+                choose_default_search_suffix()
+            end 
+
+            pref_menu.choice("Change Download Path (#{@download_path})") do
+                new_path = @cli.ask("What would you like the download path to be?") { |q| q.default = "" }
+                choose_default_path(new_path) unless new_path.empty?
+            end 
+
+            if(@downloaders.size > 0)
+                pref_downloader = @preferred_downloader ? " (#{@preferred_downloader})" : ""
+                pref_menu.choice("Change Default Downloader#{pref_downloader}" ) do
+                    choose_default_downloader()
+                end
+            end
+        end
     end
 
     def main_menu
@@ -56,57 +88,40 @@ class Chooser
                 search()                
             end
 
-            main_menu.choice("Choose Default Search Bot (#{@search_bot})") do
-                choose_search_bot()
-            end
-
-            main_menu.choice("Change Search Suffix (#{@search_suffix})") do
-                new_suffix = @cli.ask("What would you like the search suffix to be?")
-                @search_suffix = new_suffix
-            end 
-
-            main_menu.choice("Change Download Path (#{@download_path})") do
-                new_path = @cli.ask("What would you like the download path to be?") { |q| q.default = "" }
-                set_download_path(new_path) unless new_path.empty?
-            end 
-
-            num_downloaders = @downloaders.keys.size
-            if(num_downloaders > 0)
-                main_menu.choice("Change Default Downloader") do
-                    change_default_downloader()
-                end
-            end
-
-            num_active_searches = @searches.keys.size
-            if(num_active_searches > 0)
-                main_menu.choice("Active Searches (#{num_active_searches})") do
+            
+            if(@searches.size > 0)
+                main_menu.choice("Active Searches (#{@searches.size})") do
                     @searches.each do | search, accepted |
                         state = accepted ? 'x' : '?'
                         puts "#{search[:bot]} #{state} - #{search[:phrase]}"    
                     end
-                
+                    
                 end
             end
 
-            num_search_results = @results.keys.size
-            if(num_search_results > 0 )
-                main_menu.choice("Search Results (#{num_search_results})") do
+            if(@results.size > 0 )
+                main_menu.choice("Search Results (#{@results.size})") do
                     choose_results()
                 end
             end
 
-            num_downloads = @downloads.size
-            if(num_downloads > 0)
-                main_menu.choice("View Downloads (#{num_downloads})") do
+            if(@downloads.size > 0)
+                main_menu.choice("View Downloads (#{@downloads.size})") do
                     @downloads.each do | download |
                         puts download
                     end 
                 end
             end
 
-            main_menu.choice("Refresh") do
+            main_menu.choice("Preferences") do
+                choose_preferences()
+            end
+
+            refresh = "Refresh"
+            main_menu.choice(refresh) do
                 
             end
+            main_menu.default = refresh
 
             main_menu.choice("Quit") do
                 quit()
@@ -115,7 +130,7 @@ class Chooser
         
     end
     
-    def set_download_path(path)
+    def choose_default_path(path)
         @download_path = File.expand_path(path)
     end
 
@@ -129,17 +144,25 @@ class Chooser
     end
 
     def main_menu_choice(menu)
-        menu.choice("Main Menu") do
-            main_menu()
+        mm = "Main Menu"
+        menu.choice(mm) do
+            # main_menu()
         end
+        menu.default = mm
     end
 
-    def change_default_downloader()
+    def choose_default_downloader()
+        if @downloaders.empty?
+            return
+        end
+
         @cli.choose do | downloader_menu |
             downloader_menu.prompt = "Who would you like to download from?"
             main_menu_choice(downloader_menu)
             @downloaders.each do | downloader, blah |
-
+                downloader_menu.choice(downloader) do
+                    @preferred_downloader = downloader 
+                end
             end
 
         end
@@ -166,11 +189,13 @@ class Chooser
                         choice = [ downloader, title].join(' ')
                         book_menu.choice( choice ) do
                             the_choice = [ downloader, title].join(' ')
+                            do_yield( the_choice )
                             if(downloader != @preferred_downloader)
                                 answer = @cli.ask("Make #{downloader} your preferred downloader? (y/n)")
                                 @preferred_downloader = downloader if answer.downcase[0] == 'y'
+                                preferred_downloader = @preferred_downloader
                             end
-                            do_yield( the_choice )
+                            choose_books(search,preferred_downloader)
                         end
                     end
                 end
@@ -180,22 +205,20 @@ class Chooser
 
     def choose_results()
         @cli.choose do | results_menu |
-            results_menu.prompt = "Which Search Would you like to view?" 
+            results_menu.prompt = "Which search results would you like to view?" 
 
             main_menu_choice(results_menu)
 
             @results.each do | search, results |
                 results_menu.choice( "#{search[:phrase]} (#{results.keys.size})") do
+                    choose_default_downloader() unless @preferred_downloader
                     choose_books(search, @preferred_downloader)
                 end
-            end
-            results_menu.choice("Main Menu") do
-                main_menu()
             end
         end
     end
 
-    def choose_search_bot()
+    def choose_default_search_bot()
         puts "-----------here-----------"
         @cli.choose do | bot_menu |
             bot_menu.prompt = "Which search bot would you like to use?"
@@ -306,8 +329,6 @@ class Chooser
 end
 
 
-
-
 def on_next(&block) 
     #puts "--------------------------ON NEXT"
     Timer(1,{:shots => 1}) do
@@ -344,19 +365,20 @@ def main
                 # puts "oentuheontuhethuenhonteuohnutoheountuhonteuohenutohueoheuooetnh"
                 search_bots = topic.split().select{ | word | word.match(/@.*/) }.collect{|bot| bot.gsub('@','').downcase }
                 chooser.set_search_bots(search_bots)
-                Channel( EBOOKS ).send( "hello" )
+                puts "limit: #{Channel( EBOOKS ).limit}"
                 on_next() do
                     begin
                         running = true
                         begin
                             chooser.choose() do | cmd |
-                                #puts "the command is #{cmd}"
                                 if(cmd == "quit")
                                     running = false
                                 else
-                                    Channel( EBOOKS ).send( cmd )
+                                    on_next() do
+                                        #puts "the command is #{cmd}" 
+                                        Channel( EBOOKS ).send( cmd )
+                                    end
                                 end
-                                
                             end
                         end while running
                     rescue => e
