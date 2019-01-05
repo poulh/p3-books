@@ -28,6 +28,7 @@ class Chooser
         
         @searches = {}
         @results = {}
+        @downloads = []
 
         @downloaders = {}
         @preferred_downloader = nil
@@ -69,21 +70,38 @@ class Chooser
                 set_download_path(new_path) unless new_path.empty?
             end 
 
-
-            main_menu.choice("Active Searches (#{@searches.keys.size})") do
-                count = 0
-                @searches.each do | search, accepted |
-                    
-                    count += 1
-                    state = accepted ? 'x' : '?'
-                    puts "#{search[:bot]} #{state} - #{search[:phrase]}"
-                
+            num_downloaders = @downloaders.keys.size
+            if(num_downloaders > 0)
+                main_menu.choice("Change Default Downloader") do
+                    change_default_downloader()
                 end
-                puts "No active searches" if count == 0
             end
 
-            main_menu.choice("Search Results (#{@results.keys.size})") do
-               choose_results()
+            num_active_searches = @searches.keys.size
+            if(num_active_searches > 0)
+                main_menu.choice("Active Searches (#{num_active_searches})") do
+                    @searches.each do | search, accepted |
+                        state = accepted ? 'x' : '?'
+                        puts "#{search[:bot]} #{state} - #{search[:phrase]}"    
+                    end
+                
+                end
+            end
+
+            num_search_results = @results.keys.size
+            if(num_search_results > 0 )
+                main_menu.choice("Search Results (#{num_search_results})") do
+                    choose_results()
+                end
+            end
+
+            num_downloads = @downloads.size
+            if(num_downloads > 0)
+                main_menu.choice("View Downloads (#{num_downloads})") do
+                    @downloads.each do | download |
+                        puts download
+                    end 
+                end
             end
 
             main_menu.choice("Refresh") do
@@ -116,6 +134,17 @@ class Chooser
         end
     end
 
+    def change_default_downloader()
+        @cli.choose do | downloader_menu |
+            downloader_menu.prompt = "Who would you like to download from?"
+            main_menu_choice(downloader_menu)
+            @downloaders.each do | downloader, blah |
+
+            end
+
+        end
+    end
+
     def choose_books(search, preferred_downloader)
         return unless @results.has_key?(search)
         books = @results[search]
@@ -124,7 +153,7 @@ class Chooser
 
             main_menu_choice(book_menu)
 
-            unless preferred_downloader
+            if preferred_downloader
                 book_menu.choice("See results from all downloaders") do
                     choose_books(search, nil)
                 end
@@ -194,21 +223,21 @@ class Chooser
     end
 
     def parse_private_msg(user,msg)
-        # puts "parsing #{user} - #{msg}"
+        # puts "private #{user} - #{msg}"
         
         no_results = msg.index('Sorry')
         matches = @searches.keys.select{|search| search[:bot] == user and msg.index(search[:phrase])}
         if( no_results)
             matches.each do | match |
                 add_results(match,{})
-                puts "No Results: #{match[:phrase]}"
+                puts "No Results for Search: #{match[:phrase]}"
             end
         else   
             matches.each do | match |
                 accepted = @searches[match]
                 unless accepted
                     @searches[match] = true
-                    puts "Accepted: #{match[:phrase]}"
+                    puts "Search in Progress: #{match[:phrase]}"
                 end
             end
         end
@@ -226,7 +255,7 @@ class Chooser
                 :bot => @search_bot,
                 :cmd => "@#{@search_bot} #{search_phrase}"
             }
-            puts "Search Cmd: #{search[:cmd]}"
+            # puts "Search Cmd: #{search[:cmd]}"
             @searches[search] = false
             do_yield(search[:cmd])
 
@@ -237,10 +266,12 @@ class Chooser
         # puts "accept file from #{user} - #{filename} - #{file.path}"
 
         matches = @searches.keys.select{|search| search[:bot] == user and filename.index(search[:phrase].gsub(' ','_'))}
-        
+
         if matches.empty?
-            new_path = File::join( DEFAULT_PATH, filename )
-            FileUtils.mv(file.path, new_path )
+            new_path = File::join( @download_path, filename )
+            FileUtils.mv(file.path, new_path, :verbose => false )
+            @downloads << new_path
+            puts "New Download: #{new_path}"
             return
         end 
 
@@ -267,7 +298,6 @@ class Chooser
             end
         rescue => e
             puts e
-            puts "end error"
         ensure
             file.unlink
         end
@@ -317,24 +347,23 @@ def main
                 Channel( EBOOKS ).send( "hello" )
                 on_next() do
                     begin
+                        running = true
                         begin
                             chooser.choose() do | cmd |
-                                puts "the command is #{cmd}"
+                                #puts "the command is #{cmd}"
                                 if(cmd == "quit")
-                                    raise "Quitting"
+                                    running = false
                                 else
                                     Channel( EBOOKS ).send( cmd )
                                 end
                                 
                             end
-                        end while true
+                        end while running
                     rescue => e
                         puts "error: #{e}"
                     ensure
                         bot.quit
-                        puts "sleeping"
-                        sleep(1)
-                        puts "really quitting"
+                        sleep(2)
                         exit
                     end
                 end
