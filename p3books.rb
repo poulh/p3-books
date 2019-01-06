@@ -101,9 +101,7 @@ class Chooser
 
       unless @downloads.empty?
         main_menu.choice("View Downloads (#{@downloads.size})") do
-          @downloads.each do |download|
-            puts download
-          end
+          puts @downloads.join("\n")
         end
       end
 
@@ -239,18 +237,14 @@ class Chooser
   def parse_private_msg(user, msg)
     no_results = msg.index('Sorry')
     matches = @searches.keys.select { |search| search[:bot] == user && msg.index(search[:phrase]) }
-    if no_results
-      matches.each do |match|
+    matches.each do |match|
+      match_phrase = match[:phrase]
+      if no_results
         add_results(match, {})
-        puts "No Results for Search: #{match[:phrase]}"
-      end
-    else
-      matches.each do |match|
-        accepted = @searches[match]
-        unless accepted
-          @searches[match] = true
-          puts "Search in Progress: #{match[:phrase]}"
-        end
+        puts "No Results for Search: #{match_phrase}"
+      elsif !(@searches[match])
+        @searches[match] = true
+        puts "Search in Progress: #{match_phrase}"
       end
     end
   end
@@ -267,7 +261,6 @@ class Chooser
         bot: @search_bot,
         cmd: "@#{@search_bot} #{search_phrase}"
       }
-      # puts "Search Cmd: #{search[:cmd]}"
       @searches[search] = false
       do_yield(search[:cmd])
 
@@ -275,20 +268,19 @@ class Chooser
   end
 
   def accept_file(user, filename, file)
-    # puts "accept file from #{user} - #{filename} - #{file.path}"
-
     matches = @searches.keys.select { |search| search[:bot] == user && filename.index(search[:phrase].tr(' ', '_')) }
 
+    file_path = file.path
     if matches.empty?
       new_path = File.join(@download_path, filename)
-      FileUtils.mv(file.path, new_path, verbose: false)
+      FileUtils.mv(file_path, new_path, verbose: false)
       @downloads << new_path
       puts "New Download: #{new_path}"
       return
     end
 
     begin
-      zipfile = Zip::File.open(file.path)
+      zipfile = Zip::File.open(file_path)
 
       zipfile.entries.each do |entry|
         books = {}
@@ -308,8 +300,8 @@ class Chooser
           puts "New Search Results: #{match[:phrase]}"
         end
       end
-    rescue StandardError => e
-      puts e
+    rescue StandardError => error
+      puts "error: #{error}"
     ensure
       file.unlink
     end
@@ -357,13 +349,13 @@ def main
                   running = false
                 else
                   on_next do
-                    Channel(EBOOKS).send(cmd)
+                    Channel(EBOOKS).send(Sanitize(cmd))
                   end
                 end
               end
             end
-          rescue StandardError => excep
-            puts "error: #{excep}"
+          rescue StandardError => error
+            puts "error: #{error}"
           ensure
             bot.quit
             sleep(2)
